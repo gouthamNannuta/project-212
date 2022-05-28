@@ -1,61 +1,78 @@
 import socket
 from  threading import Thread
-from pynput.mouse import Button, Controller
-from screeninfo import get_monitors
-from pynput.keyboard import Key, Controller
+import time
+import os
 
+
+from pyftpdlib.authorizers import DummyAuthorizer
+from pyftpdlib.handlers import FTPHandler
+from pyftpdlib.servers import FTPServer
+
+
+IP_ADDRESS = '127.0.0.1'
+PORT = 8050
 SERVER = None
-PORT = 8000
-IP_ADDRESS = input("Enter your computer IP ADDR : ").strip()
-#IP_ADDRESS = "192.168.0.111"
-screen_width = None
-screen_height = None
+BUFFER_SIZE = 4096
+clients = {}
 
-keyboard = Controller()
-
-def getDeviceSize():
-    global screen_width
-    global screen_height
-    for m in get_monitors():
-        screen_width = int(str(m).split(",")[2].strip().split('width=')[1])
-        screen_height = int(str(m).split(",")[3].strip().split('height=')[1])
-
-def recvMessage(client_socket):
-    global keyboard
-
-    while True:
-        try:
-            message = client_socket.recv(2048).decode()
-            if(message):
-                #new_message  = eval(message)
-                # Press and release space
-               
-                keyboard.press(message)
-                keyboard.release(message)
-                print(message)           
-        
-        except Exception as error:
-            pass
+is_dir_exists = os.path.isdir('shared_files')
+print(is_dir_exists)
+if(not is_dir_exists):
+    os.makedirs('shared_files')
 
 def acceptConnections():
     global SERVER
+    global clients
+
     while True:
-        client_socket, addr = SERVER.accept()
-        print(f"Connection established with {client_socket} : {addr}")
-        thread1 = Thread(target = recvMessage, args=(client_socket,))
-        thread1.start()
+        client, addr = SERVER.accept()
+        client_name = client.recv(4096).decode().lower()
+        clients[client_name] = {
+                "client"         : client,
+                "address"        : addr,
+                "connected_with" : "",
+                "file_name"      : "",
+                "file_size"      : 4096
+            }
 
+        print(f"Connection established with {client_name} : {addr}")
 
+        thread = Thread(target = handleClient, args=(client,client_name,))
+        thread.start()
+        
 def setup():
-    print("\n\t\t\t\t\t*** Welcome To Remote Mouse ***\n")
-    global SERVER
+    print("\n\t\t\t\t\t\tIP MESSENGER\n")
+
     global PORT
     global IP_ADDRESS
-    SERVER = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    global SERVER
+
+
+    SERVER  = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     SERVER.bind((IP_ADDRESS, PORT))
-    SERVER.listen(10)
-    print("\t\t\t\tSERVER IS WAITING FOR INCOMMING CONNECTIONS...\n")
-    getDeviceSize()
+
+    SERVER.listen(100)
+
+    print("\t\t\t\tSERVER IS WAITING FOR INCOMMING CONNECTIONS...")
+    print("\n")
+
     acceptConnections()
 
-setup()
+def ftp():
+    global IP_ADDRESS
+
+    authorizer = DummyAuthorizer()
+    authorizer.add_user("lftpd","lftpd",".",perm="elradfmw")
+
+    handler = FTPHandler
+    handler.authorizer = authorizer
+
+    ftp_server = FTPServer((IP_ADDRESS,21),handler)
+    ftp_server.serve_forever()
+
+setup_thread = Thread(target=setup)   
+setup_thread.start()
+
+
+ftp_thread = Thread(target=ftp) 
+ftp_thread.start()
